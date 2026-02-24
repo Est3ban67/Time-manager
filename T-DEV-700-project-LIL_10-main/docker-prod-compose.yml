@@ -1,0 +1,80 @@
+services:
+  # Nginx reverse proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    depends_on:
+      - server
+      - client
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - trinity
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Backend service and build image
+  server:
+    build:
+      context: ./backend
+      dockerfile: prod.Dockerfile
+    depends_on:
+      database:
+        condition: service_healthy
+    # Removed external port mapping - accessed via nginx
+    networks:
+      - trinity
+
+  # Frontend service and build image
+  client:
+    build:
+      context: ./frontend
+      dockerfile: prod.Dockerfile
+    depends_on:
+      database:
+        condition: service_healthy
+    # Removed external port mapping - accessed via nginx
+    networks:
+      - trinity
+
+  # Database service
+  database:
+    image: postgres:18-trixie
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    # Persistent storage
+    volumes:
+      - db_data:/var/lib/postgresql
+    # Check that the database fully started
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "trinity", "-U", "lucaspesse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trinity
+
+# Named volume
+volumes:
+  db_data:
+
+# Network
+networks:
+  trinity:
+    driver: bridge
